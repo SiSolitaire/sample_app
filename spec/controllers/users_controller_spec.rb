@@ -59,6 +59,40 @@ describe UsersController do
         response.should have_selector("a", :href => "/users?page=2",
                                            :content => "Next")
       end
+
+      it "should not delete" do
+        get :index
+        response.should_not have_selector("a", :href => "/users/2",
+                                            :content => "delete")
+      end
+    end
+
+    describe "for admin user" do
+
+      before(:each) do
+        @user = Factory(:user)
+        @user.toggle!(:admin) 
+        test_sign_in(@user)
+        second = Factory(:user, :email => "another@example.com")
+        third  = Factory(:user, :email => "another@example.net")
+
+        @users = [@user, second, third]
+        30.times do
+          @users << Factory(:user, :email => Factory.next(:email))
+        end
+      end
+
+      it "should delete" do
+        get :index
+        response.should have_selector("a", :href => "/users/2",
+                                        :content => "delete")
+      end
+
+      it "should not delete himself" do
+        get :index
+        response.should_not have_selector("a", :href => "/users/1",
+                                            :content => "delete")
+      end
     end
   end
 
@@ -93,9 +127,21 @@ describe UsersController do
       response.should have_selector("h1>img", :class => "gravatar")
     end
 
+    it "should show the user's microposts" do
+      mp1 = Factory(:micropost, :user => @user, :content => "Foo bar")
+      mp2 = Factory(:micropost, :user => @user, :content => "Baz quux")
+      get :show, :id => @user
+      response.should have_selector("span.content", :content => mp1.content)
+      response.should have_selector("span.content", :content => mp2.content)
+    end
+
   end
 
   describe "GET 'new'" do
+
+    before(:each) do
+      @user = Factory(:user)
+    end
 
     it "should be successful" do
       get 'new'
@@ -127,6 +173,12 @@ describe UsersController do
       response.should have_selector("input[name='user[password_confirmation]'][type='password']")
     end
 
+    it "should be unsuccessful" do
+      test_sign_in(@user)
+      get :new
+      response.should_not be_success
+    end
+
   end
 
   describe "POST 'create'" do
@@ -136,11 +188,21 @@ describe UsersController do
       before(:each) do
         @attr = { :name => "", :email => "", :password => "",
                   :password_confirmation => "" }
+        @user = Factory(:user)
+        @attr2 = { :name => "New User", :email => "user@example.com",
+                  :password => "foobar", :password_confirmation => "foobar" }
       end
 
       it "should not create a user" do
         lambda do
           post :create, :user => @attr
+        end.should_not change(User, :count)
+      end
+
+      it "user signed should not create a user" do
+        lambda do
+          test_sign_in(@user)
+          post :create, :user => @attr2
         end.should_not change(User, :count)
       end
 
@@ -307,12 +369,13 @@ describe UsersController do
 
     before(:each) do
       @user = Factory(:user)
+      test_sign_in(User.new)
     end
 
     describe "as a non-signed-in user" do
       it "should deny access" do
         delete :destroy, :id => @user
-        response.should redirect_to(signin_path)
+        response.should redirect_to(root_path)
       end
     end
 
